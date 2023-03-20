@@ -45,7 +45,7 @@ unchecked_uninit_copy(InputIter first, InputIter last, ForwardIter result, std::
 
 template <class InputIter, class ForwardIter>
 ForwardIter uninitialized_copy(InputIter first, InputIter last, ForwardIter result)
-{
+{//未初始化的拷贝？
   return mystl::unchecked_uninit_copy(first, last, result, 
                                      std::is_trivially_copy_assignable<
                                      typename iterator_traits<ForwardIter>::

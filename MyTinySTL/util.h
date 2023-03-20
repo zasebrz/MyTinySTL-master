@@ -38,8 +38,8 @@ T&& forward(typename std::remove_reference<T>::type&& arg) noexcept
 template <class Tp>
 void swap(Tp& lhs, Tp& rhs)
 {
-  auto tmp(mystl::move(lhs));
-  lhs = mystl::move(rhs);
+  auto tmp(mystl::move(lhs));//转移构造函数
+  lhs = mystl::move(rhs);//转移赋值运算符，避免拷贝
   rhs = mystl::move(tmp);
 }
 

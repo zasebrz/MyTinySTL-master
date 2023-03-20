@@ -184,6 +184,7 @@ void string_test()
   std::cout << " str3 + \" success\" : " << str3 + " success" << std::endl;
   std::cout << " \"My \" + str3 : " << "My " + str3 << std::endl;
   std::cout << " str3 + str4 : " << str3 + str4 << std::endl;
+  std::cout << " string(\"success\") + str3 : " << string("success ") + str3 << std::endl;
   PASSED;
 #if PERFORMANCE_TEST_ON
   std::cout << "[--------------------- Performance Testing ---------------------]" << std::endl;

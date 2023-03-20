@@ -24,6 +24,9 @@
 
 namespace mystl
 {
+//这段预编译代码的功能是：如果标识符 max 已经用宏定义进行过定义，那么执行下面内容：
+//在编译输出窗口打印文本 “#undefing marco max”
+//删除事先定义的宏定义 max(#undef max)，会在下面重新定义？
 
 #ifdef max
 #pragma message("#undefing marco max")
@@ -43,45 +46,49 @@ namespace mystl
 template <class T>
 struct deque_buf_size
 {
-  static constexpr size_t value = sizeof(T) < 256 ? 4096 / sizeof(T) : 16;
+  static constexpr size_t value = sizeof(T) < 256 ? 4096 / sizeof(T) : 16;//这是一个静态常量，最小值是16，不能用全局吗？
 };
 
-// deque 的迭代器设计
+// deque 的迭代器设计，注意和string的区别，string的迭代器实际上就是简单地把元素指针重命名为 迭代器，而这里迭代器进行了许多封装，
+//所以容器deque的迭代器要比string的迭代器复杂得多，也支持更多的操作，比如自增，自减之类的，string的迭代器只能像指针那样操作
 template <class T, class Ref, class Ptr>
-struct deque_iterator : public iterator<random_access_iterator_tag, T>
+struct deque_iterator : public iterator<random_access_iterator_tag, T>//deque的迭代器是随机迭代器，所以会继承
 {
-  typedef deque_iterator<T, T&, T*>             iterator;
-  typedef deque_iterator<T, const T&, const T*> const_iterator;
-  typedef deque_iterator                        self;
+  typedef deque_iterator<T, T&, T*>             iterator;//这里声明别名，deque_iterator<T, T&, T*>在模板类内来说是一个类名（相当于实例化模板了），给这个类起个别名叫iterator
+  typedef deque_iterator<T, const T&, const T*> const_iterator;//常量类的别名
+  typedef deque_iterator                        self;//感觉和上面的是不是一样的？上面的好像是特例化出来的一个类，更具体一些？
 
   typedef T            value_type;
   typedef Ptr          pointer;
   typedef Ref          reference;
   typedef size_t       size_type;
-  typedef ptrdiff_t    difference_type;
-  typedef T*           value_pointer;
-  typedef T**          map_pointer;
-
-  static const size_type buffer_size = deque_buf_size<T>::value;
+  typedef ptrdiff_t    difference_type;//两个指针相间的类型
+  typedef T*           value_pointer;//指向底层数据的指针，也就是缓冲区里面保存的数据的指针
+  typedef T**          map_pointer;//指向指针的指针，也就是指向缓冲区的指针，用来找到缓冲区的位置，map中控里面保存的是value_pointer，
+                                    //而迭代器需要保存一个指向map中控里面value_pointer的指针，用来找到map中控里面的value_pointer，从而找到缓冲区的位置
+  //https://blog.csdn.net/oneNYT/article/details/107724892
+  static const size_type buffer_size = deque_buf_size<T>::value;//只读静态常量成员，所有对象共享，且不能修改，所有迭代器指向的缓冲区大小都是buffer_size
 
   // 迭代器所含成员数据
-  value_pointer cur;    // 指向所在缓冲区的当前元素
+  value_pointer cur;    // 指向所在缓冲区的当前元素，这里直接用的指针，迭代器为什么要这么多指针？因为deque的内存映像和vector不一样，是由不连续的缓冲区组成的，需要知道缓冲区的实际位置。
   value_pointer first;  // 指向所在缓冲区的头部
   value_pointer last;   // 指向所在缓冲区的尾部
-  map_pointer   node;   // 缓冲区所在节点
+  map_pointer   node;   // 指向的是map中控区中的value_pointer
 
   // 构造、复制、移动函数
   deque_iterator() noexcept
     :cur(nullptr), first(nullptr), last(nullptr), node(nullptr) {}
 
-  deque_iterator(value_pointer v, map_pointer n)
-    :cur(v), first(*n), last(*n + buffer_size), node(n) {}
+  deque_iterator(value_pointer v, map_pointer n)//用另一个迭代器来初始化，v直接指向缓冲区的当前元素，n指向的是map中控，里面保存的是缓冲区的首地址
+                                                //而first代表的就是缓冲区的首地址，所以对n取值以后就等于first
+    :cur(v), first(*n), last(*n + buffer_size), node(n) {}//似乎只是简单的复制指针？而且这个加上buffer_size是什么意思？
 
-  deque_iterator(const iterator& rhs)
+  deque_iterator(const iterator& rhs)//拷贝构造，这里用的是const iterator，可以理解为const pointer，即rhs本身是一个只读量，那么rhs里面的成员也都是只读量，因此不能改变
     :cur(rhs.cur), first(rhs.first), last(rhs.last), node(rhs.node)
   {
+      //rhs.first = rhs.first;//所以这里会报错，只读量对象的成员都是只读量，无法改变
   }
-  deque_iterator(iterator&& rhs) noexcept
+  deque_iterator(iterator&& rhs) noexcept//转移构造，绝对无异常
     :cur(rhs.cur), first(rhs.first), last(rhs.last), node(rhs.node)
   {
     rhs.cur = nullptr;
@@ -90,9 +97,17 @@ struct deque_iterator : public iterator<random_access_iterator_tag, T>
     rhs.node = nullptr;
   }
 
-  deque_iterator(const const_iterator& rhs)
+  deque_iterator(const const_iterator& rhs)//什么鬼意思？除了迭代器指向的元素是个只读量，迭代器本身也是个只读量，也就是rhs不能改变引用的对象（其实引用本身就不可改变），也不能改变自己所引用的对象
+      //iterator 可遍历，可改变所指元素
+      //const_iterator 可遍历，不可改变所指元素，他修饰的是迭代器所指向元素本身（因为迭代器就是指针）
+      //const iterator 不可遍历，可改变所指元素，他修饰的是迭代器本身（就是指针本身），可以理解成iterator是一个对象，
+      //    和int，double一样，那么const iterator说明变量（迭代器本身）是一个只读量，无法给他重新写入值（也就是将迭代器重新指向是不允许的）
+      //const_iterator 主要是在容器被定义成常量、或者非常量容器但不想改变元素值的情况下使用的，
+      //而且容器被定义成常量之后，它返回的迭代器只能是const_iterator
+      //这个构造函数只有当rhs是一个只读容器中的迭代器的时候才会调用
     :cur(rhs.cur), first(rhs.first), last(rhs.last), node(rhs.node)
   {
+      //rhs.first = rhs.first;//这里的限制是因为最前面的const，
   }
 
   self& operator=(const iterator& rhs)
@@ -109,41 +124,44 @@ struct deque_iterator : public iterator<random_access_iterator_tag, T>
 
   // 转到另一个缓冲区
   void set_node(map_pointer new_node)
-  {
+  {//只要有new_node就能找到新的缓冲区位置，这里不是新开辟buffer，只是转换一下所指向的buffer
     node = new_node;
     first = *new_node;
-    last = first + buffer_size;
+    last = first + buffer_size;//所有buffer的大小都是固定的buffer_size
   }
 
   // 重载运算符
-  reference operator*()  const { return *cur; }
-  pointer   operator->() const { return cur; }
+  reference operator*()  const { return *cur; }//对迭代器取值，和指针是一样的，取出来以后就是一个普通对象，比如int，double
+  pointer   operator->() const { return cur; }//对于普通对象int，double来说，肯定不需要进行->的操作，因为他们不存在方法，无法调用，而对于
+                                              //string或者自定义的类来说，则需要使用其中的方法，所以迭代器定义了->
 
-  difference_type operator-(const self& x) const
-  {
+  difference_type operator-(const self& x) const//迭代器相减,用self或者iterator是一样的
+  {//两个迭代器可能指向的不是同一个buffer，所以要考虑node之间的距离，注意node - x.node是指针相减，得到的是相隔缓冲区的数量，如果指向的是同一个
+      //buffer的话，那么node - x.node就等于0，假如x指向的是第一个缓冲区，self指向的是第三个缓冲区，那么node - x.node就等于2
+      //然后，加上self多出来的那一段，再减去多算 x 的那一段（上面得到的2里面有一部分是多算的）
     return static_cast<difference_type>(buffer_size) * (node - x.node)
       + (cur - first) - (x.cur - x.first);
   }
 
   self& operator++()
-  {
-    ++cur;
+  {//这是前置递增运算符
+    ++cur;//先递增cur
     if (cur == last)
-    { // 如果到达缓冲区的尾
-      set_node(node + 1);
+    { // 如果到达缓冲区的尾，那么这里不能存对象，需要换到下一个buffer去，也就是让当前这个迭代器指向下一个buffer
+      set_node(node + 1);//换到下一个buffer
       cur = first;
     }
-    return *this;
+    return *this;//返回自身引用，如果返回值的话不能出现在等号左边，显然不符合迭代器的定义
   }
   self operator++(int)
-  {
-    self tmp = *this;
-    ++*this;
-    return tmp;
+  {//这是后置递增运算符，用int参数来做区分
+    self tmp = *this;//先保存一下自身
+    ++*this;//调用前置递增运算符自增
+    return tmp;//返回旧值，注意这里返回的是值，而不是引用，因此前置递增运算符可以出现在等号左边，而后置递增则不行，不能给值赋值
   }
 
   self& operator--()
-  {
+  {//同理
     if (cur == first)
     { // 如果到达缓冲区的头
       set_node(node - 1);
@@ -159,8 +177,8 @@ struct deque_iterator : public iterator<random_access_iterator_tag, T>
     return tmp;
   }
 
-  self& operator+=(difference_type n)
-  {
+  self& operator+=(difference_type n)//n是可以小于0的，所以下面要判断
+  {//随机迭代器可以随意加减
     const auto offset = n + (cur - first);
     if (offset >= 0 && offset < static_cast<difference_type>(buffer_size))
     { // 仍在当前缓冲区
@@ -169,7 +187,7 @@ struct deque_iterator : public iterator<random_access_iterator_tag, T>
     else
     { // 要跳到其他的缓冲区
       const auto node_offset = offset > 0
-        ? offset / static_cast<difference_type>(buffer_size)
+        ? offset / static_cast<difference_type>(buffer_size)//首先看看需要跳过多少个buffer
         : -static_cast<difference_type>((-offset - 1) / buffer_size) - 1;
       set_node(node + node_offset);
       cur = first + (offset - node_offset * static_cast<difference_type>(buffer_size));
@@ -177,7 +195,7 @@ struct deque_iterator : public iterator<random_access_iterator_tag, T>
     return *this;
   }
   self operator+(difference_type n) const
-  {
+  {//返回一个临时对象
     self tmp = *this;
     return tmp += n;
   }
@@ -191,14 +209,14 @@ struct deque_iterator : public iterator<random_access_iterator_tag, T>
     return tmp -= n;
   }
 
-  reference operator[](difference_type n) const { return *(*this + n); }
+  reference operator[](difference_type n) const { return *(*this + n); }//迭代器有[]操作吗？这是啥意思
 
   // 重载比较操作符
   bool operator==(const self& rhs) const { return cur == rhs.cur; }
   bool operator< (const self& rhs) const
-  { return node == rhs.node ? (cur < rhs.cur) : (node < rhs.node); }
-  bool operator!=(const self& rhs) const { return !(*this == rhs); }
-  bool operator> (const self& rhs) const { return rhs < *this; }
+  { return node == rhs.node ? (cur < rhs.cur) : (node < rhs.node); }//等于比较cur，不等于比较node
+  bool operator!=(const self& rhs) const { return !(*this == rhs); }//为什么不直接用！=
+  bool operator> (const self& rhs) const { return rhs < *this; }//仍然是委托的
   bool operator<=(const self& rhs) const { return !(rhs < *this); }
   bool operator>=(const self& rhs) const { return !(*this < rhs); }
 };
@@ -210,28 +228,30 @@ class deque
 {
 public:
   // deque 的型别定义
-  typedef mystl::allocator<T>                      allocator_type;
+  typedef mystl::allocator<T>                      allocator_type;//申请内存空间，也就是上面说的buffer
   typedef mystl::allocator<T>                      data_allocator;
-  typedef mystl::allocator<T*>                     map_allocator;
+  typedef mystl::allocator<T*>                     map_allocator;//map中控，里面存的是指针，也是一段内存空间
 
-  typedef typename allocator_type::value_type      value_type;
-  typedef typename allocator_type::pointer         pointer;
+  typedef typename allocator_type::value_type      value_type;//其实就是T，为什么不直接用呢？
+  typedef typename allocator_type::pointer         pointer;//这个就是map_allocator里面存的东西，指向buffer数据的指针
   typedef typename allocator_type::const_pointer   const_pointer;
   typedef typename allocator_type::reference       reference;
   typedef typename allocator_type::const_reference const_reference;
   typedef typename allocator_type::size_type       size_type;
   typedef typename allocator_type::difference_type difference_type;
-  typedef pointer*                                 map_pointer;
-  typedef const_pointer*                           const_map_pointer;
+  typedef pointer*                                 map_pointer;//这个是指向map中控map_allocator的指针，就是T**，用来找到map中控
+  typedef const_pointer*                           const_map_pointer;//只读deque的map中控里面的指针不能改变，也就是这个指针所指向的对象不能
+                                                                     //改变，因此定义成const_pointer,而const pointer是修饰这个指针是个只读量
+                                                                     //无法改变指向，而可以修改对象的值
 
-  typedef deque_iterator<T, T&, T*>                iterator;
+  typedef deque_iterator<T, T&, T*>                iterator;//上面那个迭代器类
   typedef deque_iterator<T, const T&, const T*>    const_iterator;
   typedef mystl::reverse_iterator<iterator>        reverse_iterator;
   typedef mystl::reverse_iterator<const_iterator>  const_reverse_iterator;
 
-  allocator_type get_allocator() { return allocator_type(); }
+  allocator_type get_allocator() { return allocator_type(); }//申请一个对象大小的空间，并返回这个空间对象
 
-  static const size_type buffer_size = deque_buf_size<T>::value;
+  static const size_type buffer_size = deque_buf_size<T>::value;//buffer大小，和迭代器那个定义是一样的
 
 private:
   // 用以下四个数据来表现一个 deque
